@@ -3,11 +3,8 @@ from koji_wrapper.tag import KojiTag
 from koji_wrapper.base import KojiWrapperBase
 from cachetools import LRUCache
 from cachetools import TTLCache
-from threading import RLock
 import os.path
 import os
-
-_lock = RLock()
 
 CACHE_PATH = "~/.cache/container-processing"
 _build_id_to_parent_id = LRUCache(maxsize=16000)
@@ -15,7 +12,6 @@ _build_id_to_build_task_id = LRUCache(maxsize=16000)
 _build_id_or_nvr_to_build_id = LRUCache(maxsize=16000)
 _build_data = TTLCache(maxsize=6000, ttl=604800)
 _task_results = TTLCache(maxsize=8000, ttl=604800)
-_koji_session = None
 
 def load_cache():
     global _build_id_to_parent_id
@@ -104,22 +100,6 @@ def save_cache():
             pickle.dump(cache, fout)
             print("{0} is now {1}".format(filename, cache.currsize))
 
-
-def get_parent_id(build_id):
-    global _build_id_to_parent_id
-    if _build_id_to_parent_id and build_id in _build_id_to_parent_id:
-        return _build_id_to_parent_id[build_id]
-
-    global _koji_session
-    if not _koji_session:
-        _koji_session = KojiWrapperBase(profile='brew')
-
-    global _build_id_to_build_task_id
-    builddata = _koji_session.session.getBuild(build_id)
-    _build_id_to_parent_id[builddata['id']] = builddata['extra']['image']['parent_build_id']
-    _build_id_to_build_task_id[builddata['id']] = builddata['extra']['container_koji_task_id']
-    
-    return _build_id_to_parent_id[build_id]
 
 # Search for batch for a tag (will not pick up isolated builds)
 def get_matching_batch_from_tag(osp, rhel, batch, latest=False, koji_session=None, sub_tag='candidate'):
@@ -220,37 +200,34 @@ def getRecordForBuild(koji_wrapper, build_id_or_nvr, grab_build_task_info=False)
     global _build_id_to_parent_id
     global _build_id_or_nvr_to_build_id
 
-    try:
-        build_id = getBuildId(build_id_or_nvr, koji_session=koji_wrapper)
-        builddata = getBuildData(build_id, koji_session=koji_wrapper)
+    build_id = getBuildId(build_id_or_nvr, koji_session=koji_wrapper)
+    builddata = getBuildData(build_id, koji_session=koji_wrapper)
 
-        # Useful information but does not include floating tags
-        # pullspecs = builddata['extra']['image']['index']['pull']
-        # tags = builddata['extra']['image']['index']['tags']
-        #build_task_id = builddata['extra']['container_koji_task_id']
+    # Useful information but does not include floating tags
+    # pullspecs = builddata['extra']['image']['index']['pull']
+    # tags = builddata['extra']['image']['index']['tags']
+    #build_task_id = builddata['extra']['container_koji_task_id']
 
-        build_task_id = getBuildTaskId(build_id, koji_session=koji_wrapper)
-        task_results = getTaskResults(build_task_id, koji_wrapper)
+    build_task_id = getBuildTaskId(build_id, koji_session=koji_wrapper)
+    task_results = getTaskResults(build_task_id, koji_wrapper)
 
-        if build_task_id not in _task_results:
-            _task_results[build_task_id] = koji_wrapper.session.getTaskResult(build_task_id)
+    if build_task_id not in _task_results:
+        _task_results[build_task_id] = koji_wrapper.session.getTaskResult(build_task_id)
 
-        task_results = _task_results[build_task_id]
-        pullspecs = task_results['repositories']
+    task_results = _task_results[build_task_id]
+    pullspecs = task_results['repositories']
 
-        # tags from builddata will be only non floating tags
-        # pullsepcs from builddata will only be main :{ver}-{rel}
-        return {
-            'package_name': builddata['package_name'],
-            'nvr': builddata['nvr'],
-            'build_id': builddata['id'],
-            'build_pullspecs': builddata['extra']['image']['index']['pull'],
-            'build_tags': builddata['extra']['image']['index']['tags'],
-            'task_pullspecs': pullspecs,
-            'parent_build_id': _build_id_to_parent_id[build_id]
-        }
-    except Exception as e:
-        print("Caught Exception {0}, for build {1} with build_task_id {2}".format(e, (build_id_or_nvr, build_id), build_task_id))
+    # tags from builddata will be only non floating tags
+    # pullsepcs from builddata will only be main :{ver}-{rel}
+    return {
+        'package_name': builddata['package_name'],
+        'nvr': builddata['nvr'],
+        'build_id': builddata['id'],
+        'build_pullspecs': builddata['extra']['image']['index']['pull'],
+        'build_tags': builddata['extra']['image']['index']['tags'],
+        'task_pullspecs': pullspecs,
+        'parent_build_id': _build_id_to_parent_id[build_id]
+    }
 
 
 def get_container_builds_from_koji_tag(koji_tag, get_extra_info=False):
