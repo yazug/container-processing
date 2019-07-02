@@ -2,11 +2,7 @@
 
 from __future__ import print_function
 import argparse
-from container_processing.helpers import get_matching_batch_from_tag
-from container_processing.helpers import get_latest_cdn_containers
-from container_processing.helpers import getRecordForBuild
-import container_processing.helpers
-from koji_wrapper.base import KojiWrapperBase
+from container_processing.helpers import CachingKojiWrapper
 
 
 def get_options():
@@ -17,7 +13,7 @@ def get_options():
                         help='rhel version to work with')
     parser.add_argument('registry_tag', type=str,
                         help='container registry tag desired')
-    parser.add_argument('batch', type=str,
+    parser.add_argument('--batch', type=str, default=None,
                         help='batch label (from Dockerfile) of the container images')
     parser.add_argument('-Z', '--debug', action='store_true',
                         help='Enable debugging')
@@ -35,42 +31,48 @@ def main():
 
     args = get_options()
 
-    container_processing.helpers.load_cache()
+    koji_session = CachingKojiWrapper(profile='brew')
+    koji_session.load_cache()
 
-    koji_session = KojiWrapperBase(profile='brew')
     # using latest
     # might also want to use latest from batch
     print('# Checking on builds for rhos-{0}-rhel-{1}'.format(args.osp, args.rhel))
     print('oc login')
 
-    cdn_data = {}
     from_file = {}
+
     if args.from_cdn:
-        cdn_data = get_latest_cdn_containers(args.osp, args.rhel)
+        cdn_data = koji_session.get_latest_cdn_containers(args.osp, args.rhel)
+
+    if args.batch:
+        batch_data = koji_session.get_matching_batch_from_tag(args.osp, args.rhel, args.batch)
+
 
     if args.from_file:
-        from_file = []
         with open(args.from_file) as fin:
             row = fin.readline()
             while row:
                 row = row.rstrip()
-                record = getRecordForBuild(koji_session, row)
+                record = koji_session.getRecordForBuild(row)
+
                 from_file[record['package_name']] = [record]
                 row = fin.readline()
+
+    koji_session.save_cache(debug=True)
 
     data = {}
     for key in set(from_file.keys()) | set(cdn_data.keys()):
         if key in cdn_data:
             data[key] = cdn_data[key]
+        if key in batch_data:
+            data[key] = batch_data[key]
         if key in from_file:
             data[key] = from_file[key]
 
-    if not data:
-        data = get_matching_batch_from_tag(args.osp, args.rhel, args.batch)
 
     for record_list in data.values():
         if len(record_list) > 1:
-            print("Multiple records found picking one {0}".format(record_list))
+            print("# Multiple records found picking one {0}".format(record_list))
         record = record_list[0]
 
         # strip off brew package name plus '-' to leave version-release
@@ -100,7 +102,6 @@ def main():
             str(int(args.osp)), latest_container, container_name,
             args.registry_tag, additional_tag))
 
-    container_processing.helpers.save_cache()
 
 if __name__ == '__main__':
     main()
