@@ -10,15 +10,14 @@ CACHE_PATH = "~/.cache/container-processing"
 
 class CachingKojiWrapper(KojiWrapperBase):
 
-    def __init__(self, **args):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
         self._build_data = TTLCache(maxsize=6000, ttl=604800)
         self._task_results = TTLCache(maxsize=8000, ttl=604800)
         self._build_id_to_parent_id = LRUCache(maxsize=16000)
         self._build_id_to_build_task_id = LRUCache(maxsize=16000)
         self._build_id_or_nvr_to_build_id = LRUCache(maxsize=16000)
-
-
 
     def _load_one(self, path, filename, default=None, debug=False):
         cache_in = default
@@ -41,7 +40,7 @@ class CachingKojiWrapper(KojiWrapperBase):
             if build_id not in self._build_id_to_parent_id:
                 self._build_id_to_parent_id[build_id] = int(val['extra']['image']['parent_build_id'])
 
-        for task_id in _task_results:
+        for task_id in self._task_results:
             val = self._task_results[task_id]
             if 'repositories' in val and 'koji_builds' in val:
                 for build_id in val['koji_builds']:
@@ -51,13 +50,17 @@ class CachingKojiWrapper(KojiWrapperBase):
     def load_cache(self, path=CACHE_PATH, debug=False):
         cache_path = os.path.expanduser(path)
 
-        self._build_id_to_parent_id = self._load_one(path, 'build_id_to_parent_id', self._build_id_to_parent_id, debug=debug)
-        self._build_id_or_nvr_to_build_id = self._load_one(path, 'build_id_or_nvr_to_build_id', self._build_id_or_nvr_to_build_id, debug=debug)
-        self._build_id_or_build_task_id = self._load_one(path, 'build_id_to_build_task_id', self._build_id_to_build_task_id, debug=debug)
+        self._build_id_to_parent_id = self._load_one(
+            cache_path, 'build_id_to_parent_id', self._build_id_to_parent_id, debug=debug)
+        self._build_id_or_nvr_to_build_id = self._load_one(
+            cache_path, 'build_id_or_nvr_to_build_id', self._build_id_or_nvr_to_build_id,
+            debug=debug)
+        self._build_id_to_build_task_id = self._load_one(
+            cache_path, 'build_id_to_build_task_id', self._build_id_to_build_task_id, debug=debug)
 
-        self._build_data = self._load_one(path, 'build_data', self._build_data, debug=debug)
-        self._task_results = self._load_one(path, 'task_results', self.task_results, debug=debug)
-        
+        self._build_data = self._load_one(cache_path, 'build_data', self._build_data, debug=debug)
+        self._task_results = self._load_one(cache_path, 'task_results', self._task_results, debug=debug)
+
         self._cross_populate_cache()
 
     def save_cache(self, path=CACHE_PATH, debug=False):
@@ -77,7 +80,6 @@ class CachingKojiWrapper(KojiWrapperBase):
                 if debug:
                     print("saving {0} now with {1}".format(filename, cache.currsize))
 
-
     # Search for batch for a tag (will not pick up isolated builds)
     def get_matching_batch_from_tag(self, osp, rhel, batch, latest=False, sub_tag='candidate'):
         """Get matching container images from koji_tag"""
@@ -86,8 +88,7 @@ class CachingKojiWrapper(KojiWrapperBase):
 
         koji_tag.builds(latest=latest, type='image', inherit=False)
 
-        return get_matching_batch_from_koji_tag(koji_tag, batch)
-
+        return self.get_matching_batch_from_koji_tag(koji_tag, batch)
 
     def get_matching_batch_from_koji_tag(self, koji_tag, batch):
         matching_containers = {}
@@ -95,7 +96,7 @@ class CachingKojiWrapper(KojiWrapperBase):
             if '-container' not in build['package_name']:
                 continue
 
-            record = self.getRecordForBuild(koji_tag, build['id'], grab_build_task_info=True)
+            record = self.getRecordForBuild(build['id'], grab_build_task_info=True)
             component = record['package_name']
 
             if [i for i in record['task_pullspecs'] if batch in i]:
@@ -114,7 +115,6 @@ class CachingKojiWrapper(KojiWrapperBase):
         return self.get_container_builds_from_koji_tag(koji_tag, get_extra_info=extra_info)
 
     def getBuildId(self, build_id_or_nvr):
-
         build_id = None
         if build_id_or_nvr in self._build_data:
             build_id = build_id_or_nvr
@@ -162,7 +162,6 @@ class CachingKojiWrapper(KojiWrapperBase):
 
         return self._build_id_to_build_task_id[build_id]
 
-
     def getRecordForBuild(self, build_id_or_nvr, grab_build_task_info=False):
         build_id = self.getBuildId(build_id_or_nvr)
         builddata = self.getBuildData(build_id)
@@ -171,7 +170,6 @@ class CachingKojiWrapper(KojiWrapperBase):
         # pullspecs = builddata['extra']['image']['index']['pull']
         # tags = builddata['extra']['image']['index']['tags']
         #build_task_id = builddata['extra']['container_koji_task_id']
-
 
         build_task_id = self.getBuildTaskId(build_id)
 
