@@ -3,7 +3,7 @@
 from __future__ import print_function
 import argparse
 from container_processing.helpers import CachingKojiWrapper
-
+from container_processing.group_test_parse import extract_summary_from_group_test_event
 
 def get_options():
     parser = argparse.ArgumentParser()
@@ -24,6 +24,8 @@ def get_options():
                         help='skip tagging as :latest')
     parser.add_argument('--from-cdn', default=False, action='store_true',
                         help='Default to using cdn content if no other images available')
+    parser.add_argument('--from-group-testing-json', type=str,
+                        help='Filename to load group testing json blob from')
     return parser.parse_args()
 
 
@@ -39,7 +41,10 @@ def main():
     print('# Checking on builds for rhos-{0}-rhel-{1}'.format(args.osp, args.rhel))
     print('oc login')
 
+    cdn_data = {}
     from_file = {}
+    batch_data = {}
+    group_test_data = {}
 
     if args.from_cdn:
         cdn_data = koji_session.get_latest_cdn_containers(args.osp, args.rhel)
@@ -47,6 +52,17 @@ def main():
     if args.batch:
         batch_data = koji_session.get_matching_batch_from_tag(args.osp, args.rhel, args.batch)
 
+    if args.from_group_testing_json:
+        json_blob_string = None
+        with open(args.from_group_testing_json) as fin:
+            json_blob_string = fin.read()
+
+        if json_blob_string:
+            group_test_json = extract_summary_from_group_test_event(json_blob_string)
+            for image in group_test_json['images']:
+                print([image])
+                record = koji_session.getRecordForBuild(image['nvr'])
+                group_test_data[record['package_name']] = [record]
 
     if args.from_file:
         with open(args.from_file) as fin:
@@ -68,7 +84,8 @@ def main():
             data[key] = batch_data[key]
         if key in from_file:
             data[key] = from_file[key]
-
+        if key in group_test_data:
+            data[key] = group_test_data[key]
 
     for record_list in data.values():
         if len(record_list) > 1:
