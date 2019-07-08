@@ -2,7 +2,7 @@
 
 from __future__ import print_function
 import argparse
-from container_processing.helpers import CachingKojiWrapper
+from container_processing.caching_koji import CachingKojiWrapper
 from container_processing.group_test_parse import extract_summary_from_group_test_event
 
 def get_options():
