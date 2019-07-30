@@ -9,8 +9,8 @@ def get_options():
     parser = argparse.ArgumentParser()
     parser.add_argument('osp', type=float,
                         help='osp version to work with')
-    parser.add_argument('--rhel', default=7.5, type=float,
-                        help='rhel version to work with')
+    parser.add_argument('--rhel', default=7, type=str,
+                        help='rhel version to work with (should match rhos-XX-rhel-<rhel_ver> of branch)')
     parser.add_argument('registry_tag', type=str,
                         help='container registry tag desired')
     parser.add_argument('--batch', type=str, default=None,
@@ -74,14 +74,14 @@ def main():
                 from_file[record['package_name']] = [record]
                 row = fin.readline()
 
-    koji_session.save_cache(debug=True)
+    koji_session.save_cache()
 
     data = {}
-    for key in set(from_file.keys()) | set(cdn_data.keys()):
+    for key in set(from_file.keys()) | set(cdn_data.keys()) | set(group_test_data.keys()) | set(batch_data.keys()):
         if key in cdn_data:
-            data[key] = cdn_data[key]
+            data[key] = [i for i in cdn_data[key].values()]
         if key in batch_data:
-            data[key] = batch_data[key]
+            data[key] = [i for i in batch_data[key].values()]
         if key in from_file:
             data[key] = from_file[key]
         if key in group_test_data:
