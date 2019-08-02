@@ -151,6 +151,8 @@ class CachingKojiWrapper(KojiWrapperBase):
                 if component not in matching_containers:
                     matching_containers[component] = {}
                 matching_containers[component][record['build_id']] = record
+            else:
+                continue
 
             if 'parent_build_id' in record:
                 parent_record = self.getRecordForBuild(record['parent_build_id'])
