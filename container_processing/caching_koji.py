@@ -21,6 +21,7 @@ class CachingKojiWrapper(KojiWrapperBase):
         self._build_id_to_build_task_id = LRUCache(maxsize=16000)
         self._nvr_to_build_id = LRUCache(maxsize=16000)
         self._build_id_to_nvr = LRUCache(maxsize=16000)
+        self._rpm_id_to_build_id = LRUCache(maxsize=604800)
 
     def _load_one(self, path, filename, default=None, debug=False):
         cache_in = default
@@ -69,9 +70,10 @@ class CachingKojiWrapper(KojiWrapperBase):
 
         # populate _build_id_to_nvr from _nvr_to_build_id
         for nvr in set(self._build_id_to_nvr.values()) - set(self._nvr_to_build_id):
-            build_id = self._nvr_to_build_id[nvr]
-            if build_id is not None:
-                self._build_id_to_nvr[build_id] = nvr
+            if nvr in self._nvr_to_build_id:
+                build_id = self._nvr_to_build_id[nvr]
+                if build_id is not None:
+                    self._build_id_to_nvr[build_id] = nvr
 
         # populate _nvr_to_build_id from _build_to_nvr
         for build_id in set(self._nvr_to_build_id.values()) - set(self._build_id_to_nvr):
@@ -83,17 +85,24 @@ class CachingKojiWrapper(KojiWrapperBase):
         cache_path = os.path.expanduser(path)
 
         self._build_id_to_parent_id = self._load_one(
-            cache_path, 'build_id_to_parent_id', self._build_id_to_parent_id, debug=debug)
+            cache_path, 'build_id_to_parent_id', self._build_id_to_parent_id,
+            debug=debug)
         self._nvr_to_build_id = self._load_one(
             cache_path, 'build_id_or_nvr_to_build_id', self._nvr_to_build_id,
             debug=debug)
         self._build_id_to_build_task_id = self._load_one(
-            cache_path, 'build_id_to_build_task_id', self._build_id_to_build_task_id, debug=debug)
+            cache_path, 'build_id_to_build_task_id',
+            self._build_id_to_build_task_id, debug=debug)
 
-        self._build_data = self._load_one(cache_path, 'build_data', self._build_data, debug=debug)
-        self._task_results = self._load_one(cache_path, 'task_results', self._task_results, debug=debug)
+        self._build_data = self._load_one(
+            cache_path, 'build_data', self._build_data, debug=debug)
+        self._task_results = self._load_one(
+            cache_path, 'task_results', self._task_results, debug=debug)
         self._build_id_to_nvr = self._load_one(
             cache_path, 'build_id_to_nvr', self._build_id_to_nvr, debug=debug)
+
+        self._rpm_id_to_build_id = self._load_one(
+            cache_path, 'rpm_id_to_build_id', debug=debug)
 
         self._cross_populate_cache()
 
@@ -108,7 +117,8 @@ class CachingKojiWrapper(KojiWrapperBase):
                                 ('build_data', self._build_data),
                                 ('task_results', self._task_results),
                                 ('nvr_to_build_id', self._nvr_to_build_id),
-                                ('build_id_to_nvr', self._build_id_to_nvr)]:
+                                ('build_id_to_nvr', self._build_id_to_nvr),
+                                ('rpm_id_to_build_id', self._rpm_id_to_build_id)]:
 
             with open(os.path.join(cache_path, filename), 'wb') as fout:
                 pickle.dump(cache, fout)
@@ -364,6 +374,19 @@ class CachingKojiWrapper(KojiWrapperBase):
 
         return tree
 
+    def get_build_id_from_rpm_id(self, rpm_id):
+        rpm_id = int(rpm_id)
+        if rpm_id in self._rpm_id_to_build_id:
+            return self._rpm_id_to_build_id[rpm_id]
+
+        rpminfo = self.getRPM(rpm_id)
+        return rpminfo['build_id']
+
+    def getRPM(self, rpmid):
+        rpminfo = self.session.getRPM(rpmid)
+        if 'build_id' in rpminfo:
+            self._rpm_id_to_build_id[rpmid] = rpminfo['build_id']
+        return rpminfo
 
 if __name__ == '__main__':
 
