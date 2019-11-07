@@ -258,9 +258,9 @@ def summarize_container_issues(parsed_html):
                     # find name of container_image if we have issues
                     if container_image is None:
                         search_container = i
-                        while not [z.text for z in search_container.find_all('a') if 'openstack' in z.text and 'container' in z.text]:
+                        while not [z.text for z in search_container.find_all('a') if 'container' in z.text]:
                             search_container = search_container.find_previous_sibling()
-                        container_image = [z.text for z in search_container.find_all('a') if 'openstack' in z.text][0]
+                        container_image = [z.text for z in search_container.find_all('a') if 'container' in z.text][0]
                     snippit = BeautifulSoup(data_str, 'html.parser')
                     for rpm in snippit.find_all('a'):
                         error_set.append({'error': error, 'container_nvr': container_image, 'rpm': rpm.text})
