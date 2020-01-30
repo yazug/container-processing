@@ -1,2 +1,5 @@
 koji_wrapper
 cachetools
+lxml
+BeautifulSoup4
+requests_gssapi
